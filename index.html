@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MySQL Security Assessment Checklist</title>
+<style>
+:root{--bg:#000;--ink:#fff;--mute:#a3a3a3;--line:#333;--soft:#111;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+:root[data-theme="light"]{--bg:#fff;--ink:#000;--mute:#555;--line:#ccc;--soft:#f2f2f2}
+@media(prefers-color-scheme:light){:root:not([data-theme="dark"]){--bg:#fff;--ink:#000;--mute:#555;--line:#ccc;--soft:#f2f2f2}}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:900px;margin:0 auto;padding:22px 16px 60px}
+header{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+h1{font-size:1.6rem;margin:0 0 4px;letter-spacing:-.02em}
+.sub{color:var(--mute);margin:0 0 16px;font-size:.9rem;max-width:62ch}
+button{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--ink);padding:6px 12px;cursor:pointer}
+button:hover{background:var(--ink);color:var(--bg)}
+:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+.target{display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+.target input{flex:1;min-width:200px;font:inherit;padding:6px 10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.prog{border:1px solid var(--ink);padding:12px 14px;margin-bottom:16px;position:sticky;top:env(safe-area-inset-top,0px);background:var(--bg);z-index:2}
+.prog .row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.prog b{font-size:1.2rem}
+.bar{height:6px;background:var(--line);margin:8px 0 6px}.bar i{display:block;height:100%;width:0;background:var(--ink);transition:width .25s}
+.prog span{color:var(--mute);font-size:.85rem}
+details{border:1px solid var(--line);margin-bottom:12px}
+summary{cursor:pointer;padding:11px 14px;font-weight:700;display:flex;justify-content:space-between;gap:10px;list-style:none;background:var(--soft)}
+summary::-webkit-details-marker{display:none}summary small{font-weight:400;color:var(--mute)}
+ul{list-style:none;margin:0;padding:0}
+li{display:grid;grid-template-columns:22px 1fr;gap:10px;padding:12px 14px;border-top:1px solid var(--line)}
+li input{appearance:none;-webkit-appearance:none;width:18px;height:18px;margin:3px 0 0;border:2px solid var(--ink);background:var(--bg);cursor:pointer;display:grid;place-content:center}
+li input:checked{background:var(--ink)}li input:checked::after{content:"";width:6px;height:10px;border:solid var(--bg);border-width:0 2px 2px 0;transform:rotate(45deg) translate(-1px,-1px)}
+.t{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-weight:600}
+li.done .t span:first-child{color:var(--mute);text-decoration:line-through}
+.sev{font-size:.72rem;font-weight:600;padding:0 7px;border:1px solid var(--ink)}
+.sev.High{background:var(--ink);color:var(--bg)}.sev.Low{border-color:var(--mute);color:var(--mute)}
+.t a{font-size:.78rem;font-weight:400;color:var(--mute);margin-left:auto}
+.f{margin-top:5px;font-size:.9rem}.f em{font-style:normal;color:var(--mute);display:inline-block;min-width:3.4em}
+code{font:.82em ui-monospace,Menlo,Consolas,monospace;background:var(--soft);border:1px solid var(--line);padding:0 4px;word-break:break-word}
+.note{color:var(--mute);font-size:.82rem;margin-top:18px}
+</style>
+</head>
+<body>
+<main>
+<header>
+<div><h1>MySQL security assessment checklist</h1><p class="sub">What to test on a MySQL server, where to look, and how serious a miss is. Queries work on MySQL 5.7 and 8.0; MariaDB differs in some tables and columns.</p></div>
+<button id="theme" aria-label="Switch between black and white theme">Invert</button>
+</header>
+<div class="target"><label for="tgt">Target</label><input id="tgt" placeholder="Host, instance or environment"></div>
+<div class="prog"><div class="row"><b id="pct">0%</b><button id="reset">Reset checklist</button></div><div class="bar"><i id="fill"></i></div><span id="cnt"></span></div>
+<div id="list"></div>
+<p class="note">Run these only against systems you are authorised to test, and prefer a read-only account for the queries.</p>
+</main>
+<script>
+var D=[
+["Exposure and version",[
+["Network listening configuration","High","Check which interfaces MySQL listens on and whether it accepts TCP connections at all. Port 3306 and 33060 (X Protocol) should be reachable only from the hosts that need them.","`SHOW VARIABLES LIKE 'bind_address';` `SHOW VARIABLES LIKE 'skip_networking';` `SHOW VARIABLES LIKE 'port';` and the `[mysqld]` section of my.cnf","server-system-variables.html#sysvar_bind_address"],
+["Version and patch level","High","Identify the exact version and compare it with Oracle Critical Patch Update advisories. MySQL 5.7 reached end of life in October 2023.","`SELECT VERSION();` `SHOW VARIABLES LIKE 'version%';`","security.html"],
+["Authentication bypass settings","High","Check that skip_grant_tables is not enabled. With it on, anyone can connect with full rights and no password.","`SHOW VARIABLES LIKE 'skip_grant_tables';` the `[mysqld]` section of my.cnf and the service start options","default-privileges.html"],
+["Unused interfaces","Low","Confirm the X Plugin, named pipe and shared memory are off when not needed.","`SHOW VARIABLES LIKE 'mysqlx%';` `SHOW PLUGINS;` and my.cnf for `mysqlx=OFF`","x-plugin.html"]]],
+["Accounts and authentication",[
+["Anonymous and passwordless accounts","High","List accounts with an empty user name or an empty credential. Each one is a login with no secret.","`SELECT user,host FROM mysql.user WHERE user='' OR authentication_string='';`","default-privileges.html"],
+["Weak and reused passwords","High","Check that a password validation policy is enforced, and look for accounts that share a password. Identical unsalted mysql_native_password hashes mean the same password.","`SHOW VARIABLES LIKE 'validate_password%';` `SELECT authentication_string,COUNT(*) FROM mysql.user GROUP BY authentication_string HAVING COUNT(*)>1;`","validate-password.html"],
+["Wildcard hosts and remote root","High","Find accounts that accept connections from any host, and any root account that is not limited to localhost.","`SELECT user,host FROM mysql.user WHERE host IN ('%','') OR (user='root' AND host<>'localhost');`","account-names.html"],
+["Authentication plugins","Med","Flag accounts on mysql_native_password (SHA-1 based), old hashing, or no plugin. caching_sha2_password is the 8.0 default.","`SELECT user,host,plugin FROM mysql.user;`","authentication-plugins.html"],
+["Password policy and lockout","Med","Check that complexity rules, password expiry and failed-login lockout are in place.","`SHOW VARIABLES LIKE 'validate_password%';` `SHOW VARIABLES LIKE 'default_password_lifetime';` `SELECT user,host,password_expired,password_last_changed FROM mysql.user;`","password-management.html"],
+["Dormant and shared accounts","Low","Find accounts that never connect, or generic accounts used by several people or services.","`SELECT user,host,total_connections FROM performance_schema.accounts;`","performance-schema-accounts-table.html"]]],
+["Privileges",[
+["Dangerous global privileges","High","Find accounts holding FILE, SUPER, PROCESS, SHUTDOWN, CREATE USER or GRANT OPTION. Application accounts should hold none of them.","`SELECT user,host FROM mysql.user WHERE File_priv='Y' OR Super_priv='Y' OR Process_priv='Y' OR Shutdown_priv='Y' OR Grant_priv='Y';`","privileges-provided.html"],
+["Excess schema, table and column grants","Med","For each application account, compare its actual grants with what the application needs. Look for grants on *.* and on schemas it does not use.","`SHOW GRANTS FOR 'user'@'host';` `SELECT * FROM mysql.db;` `SELECT * FROM mysql.tables_priv;`","show-grants.html"],
+["Access to the mysql system schema","High","Log in as a normal application account and confirm it cannot read or change mysql.* tables. Access here means hash theft or self-granted privileges.","As the app account: `SELECT user FROM mysql.user;` `SHOW GRANTS;`","system-schema.html"],
+["Privileged DEFINER routines, views and events","High","Find objects that run with a powerful definer. A low-privilege user who can call them may act as that definer.","`SELECT routine_schema,routine_name,definer FROM information_schema.routines WHERE security_type='DEFINER';` also `information_schema.views`, `events` and `triggers`","stored-objects-security.html"],
+["Enumeration by low-privilege accounts","Low","As a limited account, check what it can learn about other schemas, users and running queries.","`SHOW DATABASES;` `SELECT schema_name FROM information_schema.schemata;` `SHOW PROCESSLIST;`","show-processlist.html"]]],
+["Server configuration",[
+["File read and write functions","High","As the application account, test LOAD_FILE, INTO OUTFILE and LOAD DATA LOCAL. secure_file_priv should name a locked-down directory or be NULL.","`SHOW VARIABLES LIKE 'secure_file_priv';` `SHOW VARIABLES LIKE 'local_infile';` `SELECT LOAD_FILE('/etc/passwd');`","load-data-local-security.html"],
+["User-defined functions and plugin directory","High","Look for UDFs such as sys_exec, and check that plugin_dir cannot be written by anyone except the administrator. A writable directory allows code execution as the mysql user.","`SELECT * FROM mysql.func;` `SHOW VARIABLES LIKE 'plugin_dir';` `ls -ld <plugin_dir>`","create-function-loadable.html"],
+["Process owner and file permissions","High","mysqld must not run as root. The config files, data directory and log directory must not be readable by other users.","`ps -ef | grep mysqld`; `ls -l /etc/mysql/ /etc/my.cnf /var/lib/mysql /var/log/mysql`","security-against-attack.html"],
+["Credentials left in files and history","High","Search for passwords stored in client config, shell history, scripts and cron jobs.","`[client]` section of my.cnf; `~/.my.cnf`; `~/.mysql_history`; shell history; `mysql_config_editor print --all`","password-security-user.html"],
+["SQL mode","Med","Confirm strict mode is on so invalid data is rejected rather than silently changed.","`SELECT @@GLOBAL.sql_mode;` and my.cnf `sql_mode`","sql-mode.html"],
+["Symbolic links, name resolution and limits","Low","Check symbolic links are disabled, skip_name_resolve is on, sample schemas are gone and connection limits stop abuse.","`SHOW VARIABLES LIKE 'symbolic_links';` `SHOW VARIABLES LIKE 'skip_name_resolve';` `SHOW DATABASES;` `SHOW VARIABLES LIKE 'max_%connect%';`","server-system-variables.html"]]],
+["Encryption",[
+["Encryption in transit","High","Check that TLS is required, only TLS 1.2 or higher is offered, and accounts are set to require SSL.","`SHOW VARIABLES LIKE 'require_secure_transport';` `SHOW VARIABLES LIKE 'tls_version';` `SELECT user,host,ssl_type FROM mysql.user;` `SHOW STATUS LIKE 'Ssl_cipher';` `SHOW VARIABLES LIKE 'ssl_cipher';`","using-encrypted-connections.html"],
+["Encryption at rest","Med","Check that tablespaces, redo and undo logs and binary logs are encrypted and that a keyring is configured.","`SELECT name,encryption FROM information_schema.innodb_tablespaces;` (8.0) `SHOW VARIABLES LIKE 'default_table_encryption';` `SHOW VARIABLES LIKE 'binlog_encryption';` `SHOW PLUGINS;` for keyring","innodb-data-encryption.html"],
+["Password storage in application tables","High","Find password columns and sample the values for plaintext, MD5 or SHA-1 instead of bcrypt or argon2.","`SELECT table_schema,table_name,column_name FROM information_schema.columns WHERE column_name REGEXP 'pass|pwd';` then `SELECT <column> FROM <table> LIMIT 5;`","information-schema-columns-table.html"]]],
+["Data exposure",[
+["Sensitive data discovery","Med","Locate columns that hold personal, financial or secret data, then check which accounts can read them.","`SELECT table_schema,table_name,column_name FROM information_schema.columns WHERE column_name REGEXP 'ssn|card|token|secret|api_key|aadhaar';` `SELECT * FROM mysql.columns_priv;`","information-schema-columns-table.html"],
+["Backups and dumps","High","Search for dump and backup files readable by other users or reachable from the web, and check the privileges of the backup account.","`find / -name '*.sql*' -o -name '*.bak' 2>/dev/null`; backup scripts; object storage buckets; web root","backup-and-recovery.html"],
+["Replication credentials","Med","Check where replica credentials are stored and that the replication account holds only REPLICATION SLAVE.","`SHOW REPLICA STATUS\\G` (or `SHOW SLAVE STATUS`); `SELECT * FROM mysql.slave_master_info;`; `SHOW GRANTS FOR 'repl'@'host';`","replication-security.html"]]],
+["Logging and audit",[
+["Audit logging","Med","Confirm that logins, failed logins, DDL and privilege changes are recorded somewhere an attacker with database access cannot erase.","`SHOW PLUGINS;` for audit_log; `SHOW VARIABLES LIKE 'audit_log%';`","audit-log.html"],
+["Log contents and permissions","Med","The general log, slow log and binary logs can hold passwords and personal data in query text. Check they are off or protected.","`SHOW VARIABLES LIKE 'general_log%';` `SHOW VARIABLES LIKE 'log_error';` `SHOW VARIABLES LIKE 'slow_query_log_file';` then `ls -l` on each path","query-log.html"],
+["Brute-force visibility","Low","Check that repeated failed connections are counted and someone is alerted.","`SHOW GLOBAL STATUS LIKE 'Aborted_connects';` `SELECT * FROM performance_schema.host_cache;`","performance-schema-host-cache-table.html"]]]
+];
+var KEY='mysql-sec-v1',st={};
+function ld(){try{st=JSON.parse(localStorage.getItem(KEY)||'{}')}catch(e){st={}}}
+function sv(){try{localStorage.setItem(KEY,JSON.stringify(st))}catch(e){}}
+function fm(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/`([^`]+)`/g,'<code>$1</code>')}
+ld();
+var list=document.getElementById('list');
+function render(){
+ list.innerHTML='';
+ D.forEach(function(sec,si){
+  var d=document.createElement('details');d.open=true;
+  var s=document.createElement('summary');s.innerHTML='<span>'+sec[0]+'</span><small></small>';d.appendChild(s);
+  var ul=document.createElement('ul');d.appendChild(ul);
+  sec[1].forEach(function(it,ii){
+   var id=si+'.'+ii,li=document.createElement('li');
+   li.className=st[id]?'done':'';
+   li.innerHTML='<input type="checkbox" id="c'+id+'" aria-label="'+it[0]+'"'+(st[id]?' checked':'')+'><div><div class="t"><span>'+it[0]+'</span><span class="sev '+it[1]+'">'+it[1]+'</span><a href="https://dev.mysql.com/doc/refman/8.0/en/'+it[4]+'" target="_blank" rel="noopener">MySQL docs</a></div><div class="f"><em>Test</em>'+fm(it[2])+'</div><div class="f"><em>Where</em>'+fm(it[3])+'</div></div>';
+   li.firstChild.onchange=function(e){if(e.target.checked)st[id]=1;else delete st[id];li.className=e.target.checked?'done':'';sv();stats()};
+   ul.appendChild(li)});
+  list.appendChild(d)});
+ stats()}
+function stats(){
+ var tot=0,dn=0;
+ Array.prototype.forEach.call(list.children,function(d){
+  var c=d.querySelectorAll('input'),n=0;
+  Array.prototype.forEach.call(c,function(x){if(x.checked)n++});
+  d.querySelector('small').textContent=n+' / '+c.length;tot+=c.length;dn+=n});
+ var p=tot?Math.round(dn/tot*100):0;
+ document.getElementById('pct').textContent=p+'%';
+ document.getElementById('fill').style.width=p+'%';
+ document.getElementById('cnt').textContent=dn+' of '+tot+' checks complete'}
+document.getElementById('reset').onclick=function(){st={};sv();render()};
+var tg=document.getElementById('tgt');
+try{tg.value=localStorage.getItem(KEY+'-t')||''}catch(e){}
+tg.oninput=function(){try{localStorage.setItem(KEY+'-t',tg.value)}catch(e){}};
+var root=document.documentElement;
+document.getElementById('theme').onclick=function(){
+ var cur=root.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme:light)').matches?'light':'dark');
+ root.setAttribute('data-theme',cur==='dark'?'light':'dark')};
+render();
+</script>
+</body>
+</html>
